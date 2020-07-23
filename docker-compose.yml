@@ -1,0 +1,14 @@
+version: '3.6'
+
+services:
+  ss:
+    image: cloak
+    network_mode: host
+    restart: always
+    env_file: ss.env
+    volumes:
+      - ./test/ss.yml:/etc/cloak.yml
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "8000"]
+      interval: 5s
+      retries: 3

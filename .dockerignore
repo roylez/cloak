@@ -1,0 +1,11 @@
+*.env
+docker-compose.yml
+Dockerfile
+# so that git sha can be obtained with in the env
+# .git
+.cache
+.gitlab-ci.yml
+
+*.md
+_build
+deps
