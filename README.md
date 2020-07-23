@@ -71,10 +71,6 @@ services:
     restart: always
     volumes:
       - ./cloak.yml:/etc/cloak.yml
-    healthcheck:
-      test: ["CMD", "nc", "-z", "127.0.0.1", "8000"]
-      interval: 5s
-      retries: 3
 ```
 
 Static accounts can be written in the following `cloak.yml`
