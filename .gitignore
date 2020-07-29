@@ -17,3 +17,5 @@ config/config_prod.exs
 .elixir_ls
 ssl/
 *.sh
+.ctagsignore
+docker-compose.yml
