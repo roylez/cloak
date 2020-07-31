@@ -1,8 +1,0 @@
----
-
-- port: 4444
-  passwd: aaaaaa
-  method: chacha20
-- port: 4445
-  passwd: aaaaaa
-  method: chacha20-ietf
