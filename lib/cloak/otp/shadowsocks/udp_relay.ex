@@ -1,7 +1,7 @@
 require Logger
 
 defmodule Cloak.Shadowsocks.UDPRelay do
-  use    GenServer
+  use    GenServer, shutdown: 2000
   import Cloak.Registry
   alias  Cloak.{ Cipher, Conn }
 
@@ -22,10 +22,6 @@ defmodule Cloak.Shadowsocks.UDPRelay do
       name: via({:udp_relay, account.port}),
       spawn_opt: [fullsweep_after: 0]
     )
-  end
-
-  def child_spec(args) do
-    Supervisor.Spec.worker(__MODULE__, args, shutdown: 2000)
   end
 
   def init(%{ port: port, method: method, passwd: passwd } = account) do

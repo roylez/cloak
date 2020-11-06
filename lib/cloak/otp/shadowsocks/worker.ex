@@ -6,7 +6,12 @@ defmodule Cloak.Shadowsocks.Worker do
   alias Cloak.Shadowsocks
 
   def child_spec(account) do
-    Supervisor.Spec.supervisor(__MODULE__, [account], restart: :transient)
+    %{ 
+      id: {__MODULE__, account.port}, 
+      start: {__MODULE__, :start_link, [account]},
+      type: :supervisor,
+      restart: :transient
+    }
   end
 
   def start_link(account) do
@@ -14,7 +19,7 @@ defmodule Cloak.Shadowsocks.Worker do
   end
 
   def init(%{ port: _port, method: _, passwd: _ } = account) do
-    children = [ { Shadowsocks.TCPRelay, [account] }, { Shadowsocks.UDPRelay, [account] } ]
+    children = [ { Shadowsocks.TCPRelay, account }, { Shadowsocks.UDPRelay, account } ]
 
     Supervisor.init(children, strategy: :one_for_one)
   end

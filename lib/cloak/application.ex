@@ -5,8 +5,6 @@ defmodule Cloak.Application do
 
   def start(_type, _args) do
 
-    Confex.resolve_env!(:cloak)
-
     children = [
       Cloak.Account,
       Cloak.DNSCache,

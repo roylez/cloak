@@ -1,16 +1,12 @@
 require Logger
 
 defmodule Cloak.Trojan do
-  use GenServer
+  use GenServer, shutdown: 2000
   alias Cloak.Account
 
   @socket_opts   [ nodelay: true, keepalive: true, sndbuf: 2097152, recbuf: 2097152 ]
 
   defstruct  ~w( listener transmitter_opts )a
-
-  def child_spec(args) do
-    Supervisor.Spec.worker(__MODULE__, args, shutdown: 2000)
-  end
 
   def start_link() do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)

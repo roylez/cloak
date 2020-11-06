@@ -18,7 +18,7 @@ defmodule Cloak.Shadowsocks do
   @doc """
   Start a new port or reload a already start port
   """
-  @spec start_worker( account() ) :: any()
+  @spec start_worker( account() ) :: { :ok, pid() } | { :error, term() }
   def start_worker( %{ port: _, method: _, passwd: _ }=account ) do
     DynamicSupervisor.start_child( __MODULE__, { Cloak.Shadowsocks.Worker, account })
   end
@@ -28,7 +28,7 @@ defmodule Cloak.Shadowsocks do
   @doc """
   Stops a port
   """
-  @spec stop_worker( integer() | account() | pid() ) :: any()
+  @spec stop_worker( integer() | account() | pid() ) :: :ok | { :error, :not_found }
   def stop_worker( port ) when is_integer(port) do
     case where({:worker, port}) do
       nil -> :ok

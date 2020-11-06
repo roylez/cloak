@@ -5,7 +5,7 @@ defmodule Cloak.Mixfile do
     [
       app:             :cloak,
       version:         _version(),
-      elixir:          "~> 1.10",
+      elixir:          "~> 1.11",
       build_embedded:  false,
       start_permanent: Mix.env == :prod,
       elixirc_paths:   _elixirc_paths(Mix.env),
@@ -23,7 +23,7 @@ defmodule Cloak.Mixfile do
   # Type "mix help compile.app" for more information
   def application do
     [
-      extra_applications: [:logger],
+      extra_applications: [:crypto, :logger],
       mod: {Cloak.Application, []}
     ]
   end
@@ -42,7 +42,6 @@ defmodule Cloak.Mixfile do
       { :salty,             "~> 0.1.3", hex: :libsalty },
       { :hkdf,              "~> 0.1"    },
       { :jason,             "~> 1.1"    },
-      { :confex,            "~> 3.4"    },
       { :yaml_elixir,       "~> 2.0"    },
       { :ranch,             "~> 2.0"    },
       { :gen_state_machine, "~> 2.0"    },

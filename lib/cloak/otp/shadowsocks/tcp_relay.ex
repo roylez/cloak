@@ -1,7 +1,7 @@
 require Logger
 
 defmodule Cloak.Shadowsocks.TCPRelay do
-  use    GenServer
+  use    GenServer, shutdown: 2000
   import Cloak.Registry
 
   alias Cloak.Cipher
@@ -10,10 +10,6 @@ defmodule Cloak.Shadowsocks.TCPRelay do
 
   @socket_opts   [ nodelay: true, keepalive: true, sndbuf: 2097152, recbuf: 2097152 ]
   @num_acceptors 5
-
-  def child_spec(args) do
-    Supervisor.Spec.worker(__MODULE__, args, shutdown: 2000)
-  end
 
   def start_link(account) do
     GenServer.start_link  __MODULE__, account, name: via({:tcp_relay, account.port})
