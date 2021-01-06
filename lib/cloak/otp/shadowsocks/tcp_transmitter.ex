@@ -63,11 +63,14 @@ defmodule Cloak.Shadowsocks.TCPTransmitter do
   # local requests
   def connected(:info, {:tcp, l, req }, %{ local: l, remote: r, cipher: c} = data) do
     :inet.setopts(l, active: :once)
-    { :ok, c, req } = Cipher.stream_decode(c, req)
-    u = data.u + byte_size(req)
-    :gen_tcp.send(r, req)
-    # Logger.debug "req: #{data.request.addr}, send: #{byte_size(req)}"
-    { :keep_state, %{ data | cipher: c, u: u } }
+    with { :ok, c, req } <- Cipher.stream_decode(c, req) do
+      u = data.u + byte_size(req)
+      :gen_tcp.send(r, req)
+      # Logger.debug "req: #{data.request.addr}, send: #{byte_size(req)}"
+      { :keep_state, %{ data | cipher: c, u: u } }
+    else
+      { :error, x } -> { :stop, :normal, %{ data | error: x } }
+    end
   end
 
   # remote responses
