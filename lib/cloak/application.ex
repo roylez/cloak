@@ -18,13 +18,14 @@ defmodule Cloak.Application do
     static = if ( Application.get_env(:cloak, :enable_static) ) do [ Cloak.Static ] else [] end
     trojan = if ( Application.get_env(:cloak, :enable_trojan) ) do [ Cloak.Trojan ] else [] end
 
-    children = children ++ mqtt ++ static ++ trojan
+    modules = mqtt ++ static ++ trojan
 
     Logger.info "Starting [ #{node()} ] node VERSION #{Application.spec(:cloak, :vsn)}"
+    Logger.info "Enabled modules: #{inspect modules}"
 
     # See http://elixir-lang.org/docs/stable/elixir/Supervisor.html
     # for other strategies and supported options
-    Supervisor.start_link(children, strategy: :one_for_one, name: Cloak)
+    Supervisor.start_link(children ++ modules, strategy: :one_for_one, name: Cloak)
   end
 
 end

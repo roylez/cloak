@@ -12,12 +12,14 @@ defmodule Common.MQTT do
         host   = Keyword.get(opts, :host)
         port   = Keyword.get(opts, :port, 1883)
         topics = Keyword.get(opts, :topics, [])
-        opts   = Keyword.update(opts, :client_id, node(), &( &1 == "" && node() ))
+        opts   = Keyword.update(opts, :client_id, node(), &( if &1 == "", do: node(), else: &1) )
         id     = opts[:client_id]
         opts = opts
                |> Keyword.put(:server, {Tortoise.Transport.Tcp, host: host, port: port})
                |> Keyword.put(:handler, {opts[:handler], [id,  __MODULE__ ]})
                |> Keyword.put(:subscriptions, _parse_topics(topics, id))
+        Logger.debug "Connecting to MQTT with: "
+        Logger.debug inspect(opts)
         Tortoise.Supervisor.start_child(opts)
         { :ok, %__MODULE__{ client_id: id } }
       end

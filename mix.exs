@@ -62,7 +62,11 @@ defmodule Cloak.Mixfile do
   defp _elixirc_paths(_), do: ["lib", "web"]
 
   defp _version() do
-    String.trim( File.read!("VERSION") ) <> "+" <> _git_sha()
+    build = case _git_sha() do
+      "" -> "dummy"
+      str -> str
+    end
+    String.trim( File.read!("VERSION") ) <> "+" <> build
   end
 
   defp _git_sha() do
