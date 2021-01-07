@@ -15,6 +15,6 @@ config :cloak, :trojan,
 
 config :cloak, Cloak.MQTT,
   host:      System.get_env( "CLOAK_MQTT_HOST",     "localhost"  ),
-  client_id: System.get_env( "CLOAK_MQTT_CLIENT",   "cloak_test" ),
+  client_id: System.get_env( "CLOAK_MQTT_CLIENT",   ""           ),
   user_name: System.get_env( "CLOAK_MQTT_USERNAME", "cloak"      ),
   password:  System.get_env( "CLOAK_MQTT_PASSWORD", "cloak"      )
