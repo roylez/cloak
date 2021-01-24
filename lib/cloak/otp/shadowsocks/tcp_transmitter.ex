@@ -102,19 +102,8 @@ defmodule Cloak.Shadowsocks.TCPTransmitter do
   def terminate(_, _, %{ error: error }=data) when not is_nil(error) do
     ip = Conn.port_ip(data.local)
     case error do
-      { :nxdomain, domain } ->
-        Logger.debug "[nxdomain][#{inspect(ip)}:#{data.port}] #{domain}"
-      { reason, d } ->
-        Logger.warn "----- [#{inspect(reason)}] #{inspect ip}:#{data.port} -----"
-        Logger.warn "request: #{inspect(d)}"
-      :econnrefused ->
-        Logger.debug "[econnrefused][#{inspect(ip)}:#{data.port}]"
-      :invalid_request ->
-        Logger.debug "[invalid_request][#{inspect(ip)}:#{data.port}]"
-      :forged ->
-        Logger.info "[forged][#{inspect(ip)}:#{data.port}]"
-      reason ->
-        Logger.warn "----- [#{inspect(reason)}] #{inspect ip}:#{data.port} -----"
+      :forged -> Logger.info  "[forged] #{inspect(ip)}:#{data.port}"
+      reason  -> Logger.debug "[#{inspect(reason)}] #{inspect ip}:#{data.port}"
     end
   end
 
