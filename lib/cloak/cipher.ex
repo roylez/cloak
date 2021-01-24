@@ -100,13 +100,12 @@ defmodule Cloak.Cipher do
         { :ok, %{ c| decoder: { key, nonce, data }}, "" }
       { :ok, c, <<len::16>> } ->
         datalen = len+16
-        << payload::bytes-size(datalen), next::bytes >> = rest
-        { :ok, c, res } = decode(c, payload)
-        if next == "" do
-          { :ok, c, res }
-        else
-          { :ok, c, more } = stream_decode(c, next)
-          { :ok, c, res <> more }
+        case rest do
+          << payload::bytes-size(datalen) >> ->
+            with { :ok, c, res } <- decode(c, payload), do: { :ok, c, res }
+          << payload::bytes-size(datalen), next::bytes >> ->
+            with { :ok, c, res }  <- decode(c, payload),
+                 { :ok, c, more } <- stream_decode(c, next), do: { :ok, c, res <> more }
         end
       # error decoding length
       { :error, reason } -> { :error, reason }

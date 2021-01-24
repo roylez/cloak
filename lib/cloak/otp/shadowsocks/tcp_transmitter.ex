@@ -42,7 +42,7 @@ defmodule Cloak.Shadowsocks.TCPTransmitter do
       { :next_state, :connecting, %{ data | cipher: c, request: req }, [{:next_event, :internal, :connect_remote }] }
     else
       { :error, x } ->
-        Logger.debug "Error: #{inspect x}"
+        Logger.warn "Shadowsocks TCP request handshake error: #{inspect x}"
         { :stop, :normal, %{ data | error: x } }
     end
   end
