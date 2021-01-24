@@ -41,9 +41,7 @@ defmodule Cloak.Shadowsocks.TCPTransmitter do
     do
       { :next_state, :connecting, %{ data | cipher: c, request: req }, [{:next_event, :internal, :connect_remote }] }
     else
-      { :error, x } ->
-        Logger.warn "Shadowsocks TCP request handshake error: #{inspect x}"
-        { :stop, :normal, %{ data | error: x } }
+      { :error, x } -> { :stop, :normal, %{ data | error: x } }
     end
   end
 
@@ -101,15 +99,25 @@ defmodule Cloak.Shadowsocks.TCPTransmitter do
     :keep_state_and_data
   end
 
-  def terminate(_, _, %{ error: { :nxdomain, e }}=data ) do
+  def terminate(_, _, %{ error: error }=data) when not is_nil(error) do
     ip = Conn.port_ip(data.local)
-    Logger.debug "[nxdomain][#{inspect(ip)}:#{data.port}] #{e}"
+    case error do
+      { :nxdomain, domain } ->
+        Logger.debug "[nxdomain][#{inspect(ip)}:#{data.port}] #{domain}"
+      { reason, d } ->
+        Logger.warn "----- [#{inspect(reason)}] #{inspect ip}:#{data.port} -----"
+        Logger.warn "request: #{inspect(d)}"
+      :econnrefused ->
+        Logger.debug "[econnrefused][#{inspect(ip)}:#{data.port}]"
+      :invalid_request ->
+        Logger.debug "[invalid_request][#{inspect(ip)}:#{data.port}]"
+      :forged ->
+        Logger.info "[forged][#{inspect(ip)}:#{data.port}]"
+      reason ->
+        Logger.warn "----- [#{inspect(reason)}] #{inspect ip}:#{data.port} -----"
+    end
   end
-  def terminate(_, _, %{ error: { reason, e }}=data ) do
-    ip = Conn.port_ip(data.local)
-    Logger.warn "----- [#{inspect(reason)}] #{inspect ip}:#{data.port} -----"
-    Logger.warn "request: #{inspect(e)}"
-  end
+
   def terminate(reason, state, data), do: super(reason, state, data)
 
 end

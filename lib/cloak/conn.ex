@@ -169,19 +169,13 @@ defmodule Cloak.Conn do
 
   def tcp_connect_remote(req), do: tcp_connect_remote(req, @socket_option, @tcp_retry)
   def tcp_connect_remote(%{ ip: r, port: port }=req, opts, retry) when retry > 1 do
-    try do
-      case :gen_tcp.connect(r, port, opts) do
-        { :ok, client }  ->
-          { :ok, req |> Map.put(:remote, client) }
-        { :error, _   }  ->
-          Logger.debug "retrying! #{inspect r}:#{port}"
-          :timer.sleep(10)
-          tcp_connect_remote(req, port, opts, retry - 1)
-      end
-    rescue
-      _ ->
-        Logger.warn "CONNECT REMOTE ERROR: #{inspect req}"
-        { :error, :invalid_remote }
+    case :gen_tcp.connect(r, port, opts) do
+      { :ok, client }  ->
+        { :ok, req |> Map.put(:remote, client) }
+      { :error, _   }  ->
+        Logger.debug "retrying! #{inspect r}:#{port}"
+        :timer.sleep(10)
+        tcp_connect_remote(req, port, opts, retry - 1)
     end
   end
 

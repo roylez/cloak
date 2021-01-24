@@ -44,7 +44,7 @@ defmodule Cloak.Mixfile do
       { :jason,             "~> 1.1"    },
       { :yaml_elixir,       "~> 2.0"    },
       { :ranch,             "~> 2.0"    },
-      { :gen_state_machine, "~> 2.0"    },
+      { :gen_state_machine, "~> 2.1"    },
       { :tortoise,          "~> 0.9"    },
       { :observer_cli, "~> 1.5",        only: [:dev]  },
       { :dialyxir,     "~> 1.0.0-rc.6", only: [:dev], runtime: false }
