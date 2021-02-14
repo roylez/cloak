@@ -13,7 +13,10 @@ defmodule Cloak.Mixfile do
       deps:            _deps(),
       description:     "Shadowsocks Server",
       releases: [
-        cloak: [ cookie: "CHANGEME" ]
+        cloak: [
+          cookie: "CHANGEME",
+          include_executables_for: [:unix]
+        ]
       ]
     ]
   end

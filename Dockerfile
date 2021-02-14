@@ -18,7 +18,6 @@ RUN mix release
 FROM alpine:3.12
 
 ENV LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 LANGUAGE=en_US.UTF-8
-ENV REPLACE_OS_VARS=true
 
 RUN apk update --no-cache && \
     apk add --no-cache bash libsodium libssl1.1 ncurses-libs
