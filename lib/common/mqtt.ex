@@ -18,6 +18,7 @@ defmodule Common.MQTT do
                |> Keyword.put(:server, {Tortoise.Transport.Tcp, host: host, port: port})
                |> Keyword.put(:handler, {opts[:handler], [id,  __MODULE__ ]})
                |> Keyword.put(:subscriptions, _parse_topics(topics, id))
+        Logger.info "Connecting to MQTT@#{host}:#{port} as #{node()} "
         Logger.debug "Connecting to MQTT with: "
         Logger.debug inspect(opts)
         Tortoise.Supervisor.start_child(opts)
