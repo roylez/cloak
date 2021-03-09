@@ -8,7 +8,7 @@ defmodule Cloak.Trojan do
 
   defstruct  ~w( listener transmitter_opts )a
 
-  def start_link() do
+  def start_link(_) do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
   end
 
