@@ -4,6 +4,7 @@ import Config
 
 config :logger, :console,
   format: "$date $time $metadata[$level] $levelpad$message\n",
+  metadata: [:port, :client],
   colors: [ enabled: true ]
 
 config :cloak, env: config_env()
