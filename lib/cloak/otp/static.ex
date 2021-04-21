@@ -39,6 +39,7 @@ defmodule Cloak.Static do
     |> Enum.map( fn {k, v} -> {String.to_atom(k), v} end )
     |> Enum.into( %{} )
     |> Map.take(~w( port passwd method )a)
+    |> Map.update(:passwd, "passwd", &to_string/1)
   end
 
   defp _load_accounts(conf \\ @config_file) do

@@ -19,3 +19,4 @@ ssl/
 *.sh
 .ctagsignore
 docker-compose.yml
+.tasks
