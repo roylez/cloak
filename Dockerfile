@@ -25,7 +25,7 @@ FROM alpine:${alpine_version}
 ENV LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 LANGUAGE=en_US.UTF-8
 
 RUN apk update --no-cache && \
-    apk add --no-cache bash libsodium libssl1.1 ncurses-libs
+    apk add --no-cache bash libsodium libssl1.1 ncurses-libs libgcc libstdc++
 
 WORKDIR /app
 
