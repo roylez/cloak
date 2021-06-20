@@ -42,8 +42,7 @@ defmodule Cloak.Mixfile do
   # Type "mix help deps" for more examples and options
   defp _deps do
     [
-      { :salty,             "~> 0.1.3", hex: :libsalty },
-      { :hkdf,              "~> 0.1"    },
+      { :salty,             github: "roylez/libsalty" },
       { :jason,             "~> 1.1"    },
       { :yaml_elixir,       "~> 2.0"    },
       { :ranch,             "~> 2.0"    },

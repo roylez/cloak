@@ -1,4 +1,8 @@
-FROM hexpm/elixir:1.11.1-erlang-22.3.4.7-alpine-3.12.0 as builder
+ARG erlang_version=24.0.2
+ARG elixir_version=1.12.1
+ARG alpine_version=3.13.3
+
+FROM hexpm/elixir:${elixir_version}-erlang-${erlang_version}-alpine-${alpine_version} AS builder
 
 RUN apk update
 RUN apk add libsodium libsodium-dev build-base git libtool autoconf automake
@@ -15,7 +19,8 @@ RUN mix release
 
 # ==============================================
 
-FROM alpine:3.12
+FROM alpine:${alpine_version}
+
 
 ENV LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 LANGUAGE=en_US.UTF-8
 

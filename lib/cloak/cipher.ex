@@ -13,9 +13,9 @@ defmodule Cloak.Cipher do
     method:  nil,   # encryption method
     key:     nil,   # derived key or aead master key
     # encoding context
-    #   aes-128-cfb:     { key, iv, buf }
-    #   stream ciphers:  { key, iv, counter }
-    #   AEAD:            { subkey, nonce, tag }
+    #   cfb and ctr ciphers:  erl crypto state reference
+    #   stream ciphers:       { key, iv, counter }
+    #   AEAD:                 { subkey, nonce, tag }
     encoder: nil,
     decoder: nil,
     key_len: 0,    # key size
@@ -24,13 +24,13 @@ defmodule Cloak.Cipher do
   ]
 
   @ciphers %{
-    # { key, iv, cipher_type } size pair for streaming ciphers
     aes_128_ctr:            { 16, 16, :ctr },
     aes_192_ctr:            { 24, 16, :ctr },
     aes_256_ctr:            { 32, 16, :ctr },
     aes_128_cfb:            { 16, 16, :block  },
     aes_192_cfb:            { 24, 16, :block  },
     aes_256_cfb:            { 32, 16, :block  },
+    # { key, iv, cipher_type } size pair for streaming ciphers
     chacha20:               { 32, 8,  :stream },
     chacha20_ietf:          { 32, 12, :stream },
     salsa20:                { 32, 8,  :stream },
@@ -125,9 +125,10 @@ defmodule Cloak.Cipher do
       :stream -> 
         { iv, %{ c | encoder: { c.key, iv, 0    } } }
       :block ->
-        { iv, %{ c | encoder: { c.key, iv, <<>> } } }
+        encoder = :crypto.crypto_init(:"#{c.method}128", c.key, iv, true)
+        { iv, %{ c | encoder: encoder } }
       :ctr ->
-        encoder = :crypto.stream_init(c.method, c.key, iv)
+        encoder = :crypto.crypto_init(c.method, c.key, iv, true)
         { iv, %{ c | encoder: encoder } }
     end
   end
@@ -142,25 +143,9 @@ defmodule Cloak.Cipher do
       { :ok, %{ c | encoder: encoder }, res }
     end
   end
-  def encode(%Cipher{ type: :block }=c, data) do
-    { key, iv, buffer } = c.encoder
-    txt_len = byte_size( data )
-    buf_len = byte_size( buffer )
-    total = buffer <> data
-    blk_len = div(txt_len + buf_len, 16) * 16
-    << blocks :: bytes-size(blk_len), rest :: bytes >> = total
-
-    encoded_blocks = :crypto.block_encrypt( :aes_cfb128, key, iv, blocks )
-    # 16 bytes for new iv
-    new_iv = binary_part(iv <> encoded_blocks, byte_size(encoded_blocks)+16, -16)
-    encoded_rest = :crypto.block_encrypt( :aes_cfb128, key, new_iv, rest )
-    encoded = encoded_blocks <> encoded_rest
-    result = binary_part(encoded, buf_len, txt_len)
-    { :ok, %{ c| encoder: {key, new_iv, rest} }, result}
-  end
-  def encode(%Cipher{ type: :ctr }=c, data) do
-    { encoder , res } = :crypto.stream_encrypt(c.encoder, data)
-    { :ok, %{ c| encoder: encoder }, res }
+  def encode(%Cipher{ type: t }=c, data) when t in [:block, :ctr] do
+    result = :crypto.crypto_update(c.encoder, data)
+    { :ok, c, result}
   end
 
   @spec init_decoder( t, iv::binary) :: t
@@ -172,9 +157,10 @@ defmodule Cloak.Cipher do
       :stream -> 
         %{ c | decoder: { c.key, iv, 0    } }
       :block ->
-        %{ c | decoder: { c.key, iv, <<>> } }
+        decoder = :crypto.crypto_init(:"#{c.method}128", c.key, iv, false)
+        %{ c | decoder: decoder }
       :ctr ->
-        decoder = :crypto.stream_init(c.method, c.key, iv)
+        decoder = :crypto.crypto_init(c.method, c.key, iv, false)
         %{ c | decoder: decoder }
     end
   end
@@ -188,23 +174,9 @@ defmodule Cloak.Cipher do
       { :ok, %{ c | decoder: decoder }, res }
     end
   end
-  def decode(%Cipher{ type: :block }=c, data) do
-    { key, iv, buffer } = c.decoder
-    txt_len = byte_size( data )
-    buf_len = byte_size( buffer )
-    total = buffer <> data
-    blk_len = div(txt_len + buf_len, 16) * 16
-    << blocks :: binary-size(blk_len), rest :: binary >> = total
-    decoded_blocks = :crypto.block_decrypt(:aes_cfb128, key, iv, blocks)
-    # 16 bytes for new iv
-    new_iv = binary_part(iv <> blocks, byte_size(blocks)+16, -16)
-    decoded_rest = :crypto.block_decrypt(:aes_cfb128, key, new_iv, rest)
-    result = binary_part(decoded_blocks<>decoded_rest, buf_len, txt_len)
-    {:ok, %{c | decoder: {key, new_iv, rest} }, result}
-  end
-  def decode(%Cipher{ type: :ctr }=c, data) do
-    { decoder , res } = :crypto.stream_decrypt(c.decoder, data)
-    { :ok, %{ c| decoder: decoder }, res }
+  def decode(%Cipher{ type: t }=c, data) when t in [:block, :ctr] do
+    result = :crypto.crypto_update(c.decoder, data)
+    {:ok, c, result}
   end
   # }}}
   
