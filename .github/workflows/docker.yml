@@ -17,8 +17,12 @@ jobs:
           version: latest
       - name: login to docker hub
         run: echo "${{ secrets.DOCKER_TOKEN }}" | docker login -u "${{ secrets.DOCKER_USER }}" --password-stdin
+      - name: get date
+        id: date
+        run: "::set-output name=date::$(date +'%Y%m%d')"
       - name: build the image
         run: |
           docker buildx build --push \
-            --tag roylez/cloak:latest \
+            --tag $GITHUB_REPOSITORY:latest \
+            --tag $GITHUB_REPOSITORY:${{steps.date.outputs.date}}
             --platform linux/amd64,linux/arm64 .
