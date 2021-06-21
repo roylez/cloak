@@ -24,8 +24,9 @@ FROM alpine:${alpine_version}
 
 ENV LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 LANGUAGE=en_US.UTF-8
 
+# iputils is required for ping command
 RUN apk update --no-cache && \
-    apk add --no-cache bash libsodium libssl1.1 ncurses-libs libgcc libstdc++
+    apk add --no-cache bash libsodium libssl1.1 ncurses-libs libgcc libstdc++ iputils
 
 WORKDIR /app
 
