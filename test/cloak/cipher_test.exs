@@ -2,7 +2,7 @@ defmodule Cloak.CipherTest do
   use ExUnit.Case, async: true
   alias Cloak.Cipher
 
-  @passwd    "TestPasswd123"
+  @passwd    "foQuC36lejke0X0FkHBbVAJAWiZlGtFO5vKhiduv+is="
   @data      "Something needs to be encrypted"
   @more_data "One thing I've learned in the woods is that there is no such thing as random. Everything is steeped in meaning, colored by relationships, one thing with another."
   @ciphers ~w(

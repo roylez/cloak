@@ -37,11 +37,14 @@ defmodule Cloak.Cipher do
     # { key, salt } size pair for AEAD ciphers
     aes_256_gcm:             { 32, 32, :aead },
     chacha20_ietf_poly1305:  { 32, 32, :aead },
-    xchacha20_ietf_poly1305: { 32, 32, :aead }
+    xchacha20_ietf_poly1305: { 32, 32, :aead },
+    # { key, salt } size pair for 2022_blake3 ciphers
+    blake3_aes_256_gcm:      { 32, 32, :blake3 },
   }
   @sodium_block_size 64
   @sodium_aead %{ 
     aes_256_gcm:             Salty.Aead.Aes256gcm,
+    blake3_aes_256_gcm:      Salty.Aead.Aes256gcm,
     chacha20_ietf_poly1305:  Salty.Aead.Chacha20poly1305Ietf,
     xchacha20_ietf_poly1305: Salty.Aead.Xchacha20poly1305Ietf
   }
@@ -56,18 +59,21 @@ defmodule Cloak.Cipher do
   """
   @spec setup(atom | String.t, passwd::String.t ) :: { :ok, t } | { :error, :invalid_method }
   def setup(method, passwd) when is_binary(method), do: setup(_parse_method(method), passwd)
+  def setup(method, _passwd) when not is_map_key(@ciphers, method), do: { :error, :invalid_method }
   def setup(method, passwd) do
-    case @ciphers[method] do
-      { key_len, iv_len, type } ->
-        { :ok,
-          %__MODULE__{
-            key: compute_key(passwd, key_len, iv_len),
-            method: method,
-            key_len: key_len,
-            iv_len: iv_len,
-            type: type }
-        }
-      _ -> { :error, :invalid_method }
+    { key_len, iv_len, type } = @ciphers[method]
+    res = %__MODULE__{ method: method, key_len: key_len, iv_len: iv_len, type: type }
+    if type == :blake3 do
+      with {:ok, key} <- Base.decode64(passwd),
+           ^key_len <- byte_size(key)
+      do
+        { :ok, %{ res | key: key } }
+      else
+        e when is_integer(e) -> { :error, :invalid_passwd_length }
+        _ -> { :error, :invalid_method }
+      end
+    else
+      { :ok, %{ res | key: compute_key(passwd, key_len, iv_len) } }
     end
   end
 
@@ -78,7 +84,13 @@ defmodule Cloak.Cipher do
     { :ok, c , more } = stream_encode(c, binary_part(data, 0x3FFF, byte_size(data)-0x3FFF))
     { :ok, c , res <> more }
   end
-  def stream_encode(%Cipher{ type: :aead }=c, data) do
+  def stream_encode(%Cipher{ type: :blake3 }=c, data) when byte_size(data) > 0xFFFF do
+    { :ok, c , res }  = stream_encode(c, binary_part(data, 0, 0xFFFF))
+    { :ok, c , more } = stream_encode(c, binary_part(data, 0xFFFF, byte_size(data)-0xFFFF))
+    { :ok, c , res <> more }
+  end
+  def stream_encode(%Cipher{ type: type }=c, data)
+  when type in [:aead, :blake3] do
     l = byte_size(data)
     { :ok, c, len } = encode(c, << l::16 >>)
     { :ok, c, res } = encode(c, data)
@@ -89,10 +101,10 @@ defmodule Cloak.Cipher do
   @spec stream_decode( t, data::binary ) :: { :ok, t, res::binary }
 
   def stream_decode(%Cipher{}=c, ""), do: { :ok, c, "" }
-  def stream_decode(%Cipher{type: :aead, decoder: {key, nonce, buf}}=c, data) do
+  def stream_decode(%Cipher{type: type, decoder: {key, nonce, buf}}=c, data) when type in [:aead, :blake3] do
     stream_decode(%{c|decoder: {key, nonce}}, buf<>data)
   end
-  def stream_decode(%Cipher{type: :aead}=c, <<len::bytes-18, rest::bytes>>=data) do
+  def stream_decode(%Cipher{type: type}=c, <<len::bytes-18, rest::bytes>>=data) when type in [:aead, :blake3] do
     case decode(c, len) do
       # not enough data for a full package decode, leave it for next time
       { :ok, _, <<len::16>> } when (len+16) > byte_size(rest) ->
@@ -112,29 +124,36 @@ defmodule Cloak.Cipher do
     end
   end
   # when there is not enough data for decoding
-  def stream_decode(%Cipher{type: :aead, decoder: { key, nonce} }=c, data), do: { :ok, %{ c| decoder: { key, nonce, data } }, "" }
+  def stream_decode(%Cipher{type: type, decoder: { key, nonce} }=c, data) when type in [:aead, :blake3] do
+    { :ok, %{ c| decoder: { key, nonce, data } }, "" }
+  end
   def stream_decode(%Cipher{}=c, data), do: decode(c, data)
 
   @spec init_encoder( t ) :: { iv::binary, t }
-  def init_encoder(c) do
-    iv  = _generate_iv(c.iv_len)
-    case c.type do
-      :aead -> 
-        key = compute_aead_subkey(c.key, iv)
-        { iv, %{ c | encoder: { key, 0          } } }
-      :stream -> 
-        { iv, %{ c | encoder: { c.key, iv, 0    } } }
-      :block ->
-        encoder = :crypto.crypto_init(:"#{c.method}128", c.key, iv, true)
-        { iv, %{ c | encoder: encoder } }
-      :ctr ->
-        encoder = :crypto.crypto_init(c.method, c.key, iv, true)
-        { iv, %{ c | encoder: encoder } }
-    end
+  def init_encoder(%{ type: type, key: key }=c)
+  when type in [:aead, :blake3] do
+    salt = _generate_iv( c.iv_len )
+    subkey = compute_subkey(type, key, salt)
+    { salt, %{ c | encoder: { subkey, 0 } } }
+  end
+  def init_encoder(%{ type: :stream, key: key }=c) do
+    iv = _generate_iv( c.iv_len )
+    { iv, %{ c | encoder: { key, iv, 0 } } }
+  end
+  def init_encoder(%{ type: :block, key: key, method: method }=c) do
+    iv = _generate_iv( c.iv_len )
+    encoder = :crypto.crypto_init(:"#{method}128", key, iv, true)
+    { iv, %{ c | encoder: encoder } }
+  end
+  def init_encoder(%{ type: :ctr, key: key, method: method }=c) do
+    iv = _generate_iv( c.iv_len )
+    encoder = :crypto.crypto_init(method, key, iv, true)
+    { iv, %{ c | encoder: encoder } }
   end
 
   @spec encode(t, data::binary) :: { :ok, t, res::binary }
-  def encode(%Cipher{ type: :aead }=c, data) do
+  def encode(%Cipher{ type: type }=c, data)
+  when type in [:aead, :blake3] do
     with {:ok, encoder, res} <- _sodium_aead_encode(c.method, c.encoder, data),
     do: {:ok, %{c| encoder: encoder }, res}
   end
@@ -149,23 +168,25 @@ defmodule Cloak.Cipher do
   end
 
   @spec init_decoder( t, iv::binary) :: t
-  def init_decoder(c, iv) do
-    case c.type do
-      :aead -> 
-        key = compute_aead_subkey(c.key, iv)
-        %{ c | decoder: { key, 0          } }
-      :stream -> 
-        %{ c | decoder: { c.key, iv, 0    } }
-      :block ->
-        decoder = :crypto.crypto_init(:"#{c.method}128", c.key, iv, false)
-        %{ c | decoder: decoder }
-      :ctr ->
-        decoder = :crypto.crypto_init(c.method, c.key, iv, false)
-        %{ c | decoder: decoder }
-    end
+  def init_decoder(%{ type: type, key: key }=c, salt)
+  when type in [:aead, :blake3] do
+    subkey = compute_subkey(type, key, salt)
+    %{ c | decoder: { subkey, 0 } }
+  end
+  def init_decoder(%{ type: :stream, key: key }=c, iv) do
+    %{ c | decoder: { key, iv, 0 } }
+  end
+  def init_decoder(%{ type: :block, key: key, method: method }=c, iv) do
+    decoder = :crypto.crypto_init(:"#{method}128", key, iv, false)
+    %{ c | decoder: decoder }
+  end
+  def init_decoder(%{ type: :ctr, key: key, method: method }=c, iv) do
+    decoder = :crypto.crypto_init(method, key, iv, false)
+    %{ c | decoder: decoder }
   end
 
-  def decode(%Cipher{ type: :aead }=c, data) do
+  def decode(%Cipher{ type: type }=c, data)
+  when type in [:aead, :blake3] do
     with {:ok, decoder, res} <- _sodium_aead_decode(c.method, c.decoder, data),
     do: {:ok, %{c| decoder: decoder}, res}
   end
@@ -191,9 +212,12 @@ defmodule Cloak.Cipher do
   @doc """
   Computes subkey for AEAD encryption using master key and salt
   """
-  @spec compute_aead_subkey( binary, String.t ) :: binary
-  def compute_aead_subkey(key, salt) do
+  @spec compute_subkey( atom, binary, String.t ) :: binary
+  def compute_subkey(:aead, key, salt) do
     HKDF.derive(:sha, key, 32, salt, "ss-subkey")
+  end
+  def compute_subkey(:blake3, key, salt) do
+    Blake3.derive_key("shadowsocks 2022 session subkey", key <> salt)
   end
 
   @spec _generate_iv( len::integer ) :: binary()
@@ -254,6 +278,7 @@ defmodule Cloak.Cipher do
     str
     |> String.downcase
     |> String.replace("-", "_")
+    |> String.replace(~r/^\d{4}_/, "")  # remove "2022-" prefix for "2022-blake3..."
     |> String.to_atom
   end
 end

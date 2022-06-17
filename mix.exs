@@ -43,11 +43,12 @@ defmodule Cloak.Mixfile do
   defp _deps do
     [
       { :salty,             github: "roylez/libsalty" },
-      { :jason,             "~> 1.1"    },
-      { :yaml_elixir,       "~> 2.0"    },
-      { :ranch,             "~> 2.0"    },
-      { :gen_state_machine, "~> 3.0"    },
-      { :tortoise,          "~> 0.9"    },
+      { :jason,             "~> 1.1"   },
+      { :yaml_elixir,       "~> 2.0"   },
+      { :ranch,             "~> 2.0"   },
+      { :gen_state_machine, "~> 3.0"   },
+      { :tortoise,          "~> 0.9"   },
+      { :blake3,            "~> 0.4.1" },
       { :observer_cli, "~> 1.5", only: [:dev]  },
       { :dialyxir,     "~> 1.0", only: [:dev], runtime: false }
     ]

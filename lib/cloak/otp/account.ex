@@ -25,19 +25,19 @@ defmodule Cloak.Account do
     add( %{ passwd: "11111", method: "chacha20", port: 9090 } )
   """
   @spec add( account :: t() ) :: :ok
-  def add( %{ port: port, method: _, passwd: _ } = account ) when is_number(port) do
+  def add( %{ port: port, method: m, passwd: _ } = account ) when is_number(port) do
     case get(port) do
       nil ->
         case Shadowsocks.start_worker(account) do
           { :ok, _ } ->
-            Logger.info "PORT started: #{port}"
+            Logger.info "PORT #{port} started, cipher #{m}"
             Cloak.Trojan.reload()
             Agent.update(__MODULE__, &( Map.put( &1, port, account ) ))
           { :error, { :shutdown, reason } } ->
-            Logger.warn "PORT start failed: #{port} - #{inspect reason}"
+            Logger.warn "PORT #{port} start failed: #{inspect reason}"
             Logger.debug inspect(account)
           { :error, other } ->
-            Logger.warn "PORT start failed: #{port} - #{inspect other}"
+            Logger.warn "PORT #{port} start failed: #{inspect other}"
             Logger.debug inspect(account)
         end
       ^account -> :ok
