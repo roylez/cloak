@@ -1,6 +1,6 @@
 require Logger
 
-defmodule Cloak.Shadowsocks.UDPRelay do
+defmodule Cloak.Shadowsocks.UDPRelay2022 do
   use    GenServer, shutdown: 2000
   import Cloak.Registry
   alias  Cloak.{ Cipher, Conn }
@@ -9,10 +9,11 @@ defmodule Cloak.Shadowsocks.UDPRelay do
   @port_ttl      10
 
   defstruct(
-    account:   nil,
-    port:      nil,
-    cipher:    nil,
-    req_ports: %{}
+    account:      nil,
+    port:         nil,
+    cipher:       nil,
+    req_ports:    %{},
+    block_cipher: nil,
   )
 
   def start_link(account) do
@@ -45,13 +46,17 @@ defmodule Cloak.Shadowsocks.UDPRelay do
   # request to udp servicing port
   def handle_info({ :udp, pt, ip, rport, payload }, %{ port: pt, cipher: c } = state ) do
     :inet.setopts(pt, active: :once)
-    with { :ok, iv, d } <- Conn.split_iv(payload, c.iv_len),
-         c = Cipher.init_decoder(c, iv),
-         { :ok, _, decoded } <- Cipher.decode(c, d),
-         { :ok, req } <- Conn.parse_shadowsocks_request(decoded), 
+    with <<header::bytes-16, body::bytes>> <- payload,
+         <<session_id::bytes-8, _packet_id::64>>=decrypted_header <- _decrypt_header(c, header),
+         <<_::bytes-4, nonce::little-96>> = decrypted_header,
+         %{ decoder: { subkey, _ } } <- Cipher.init_decoder(c, session_id),
+         c = %{ c | decoder: { subkey, nonce } },
+         { :ok, _, decoded } <- Cipher.decode(c, body),
+         <<0, timestamp::64, pad_len::16, _::bytes-size(pad_len), request_data::bytes>> <- decoded,
+         { :ok, req } <- Conn.parse_shadowsocks_request(request_data), 
          { :ok, req } <- Conn.udp_send(req)
     do
-      req_ports = Map.put(state.req_ports, req.remote, { ip, rport, :os.system_time(:seconds) + @port_ttl })
+      req_ports = Map.put(state.req_ports, req.remote, { ip, rport, session_id, :os.system_time(:seconds) + @port_ttl })
       { :noreply, %{ state | req_ports: req_ports } }
     else
       { :error, reason } when reason in ~w( invalid_request private_address )a -> { :noreply, state }
@@ -65,19 +70,25 @@ defmodule Cloak.Shadowsocks.UDPRelay do
         Logger.warn "----- Unhandled UDP connection: #{inspect(reason)} -----"
         Logger.warn "request: #{inspect(req)}"
         { :noreply, state }
+      e ->
+        Logger.warn "UDP error: #{inspect e}"
+        { :noreply, state }
     end
   end
 
   # received response from remote
   def handle_info( { :udp, pt, addr, _port, payload }, %{ req_ports: req_ports, cipher: c } = state ) do
     :inet.setopts(pt, active: :once)
-    with { ip, port, _expiry } <- req_ports[pt],
-         { iv, c } <- Cipher.init_encoder(c)
+    with { ip, port, client_session_id, _expiry } <- req_ports[pt],
+         { session_id, %{ encoder: { subkey, _ } } } <- Cipher.init_encoder(c, 8)
     do
-      d = _build_packet(payload, addr, port)
+      d = _build_packet(payload, addr, port, client_session_id)
+      <<_::bytes-4, nonce::little-96>>=header = <<session_id::bytes-8, 1::64>>
+      encrypted_header = _encrypt_header(c, header)
+      c = %{ c | encoder: { subkey, nonce } }
       { :ok, _, encoded } = Cipher.encode(c, d)
-      :gen_udp.send(state.port, ip, port, iv<>encoded)
-      req_ports = Map.put(req_ports, pt, { ip, port, :os.system_time(:seconds) + @port_ttl })
+      :gen_udp.send(state.port, ip, port, encrypted_header <> encoded)
+      req_ports = Map.put(req_ports, pt, { ip, port, client_session_id, :os.system_time(:seconds) + @port_ttl })
       { :noreply, %{ state | req_ports: req_ports }}
     else
       _ -> { :noreply, state }
@@ -94,10 +105,10 @@ defmodule Cloak.Shadowsocks.UDPRelay do
   def handle_info(:ttl, %{ req_ports: req_ports } = state ) do
     now = :os.system_time(:seconds)
     req_ports
-    |> Enum.filter( fn {_, {_, _, exp }} -> exp < now end )
+    |> Enum.filter( fn {_, {_, _, _, exp }} -> exp < now end )
     |> Enum.map(fn {pt, _} -> :gen_udp.close(pt) end )
     req_ports = req_ports
-                |> Enum.reject(fn {_, {_, _, exp}} -> exp < now end)
+                |> Enum.reject(fn {_, {_, _, _, exp}} -> exp < now end)
                 |> Enum.into(%{})
     Process.send_after(self(), :ttl, @port_ttl * 1000)
     { :noreply, %{ state | req_ports: req_ports }}
@@ -111,6 +122,32 @@ defmodule Cloak.Shadowsocks.UDPRelay do
   # cleanup listening socket
   def terminate(_, state), do: { :shutdown, state }
 
-  defp _build_packet( payload, {a,b,c,d}, port), do: <<1, a, b, c, d, port::size(16), payload::binary>>
+  defp _encrypt_header(cipher, data) do
+    case cipher.method do
+      :blake3_aes_128_gcm -> :crypto.crypto_one_time(:aes_128_ecb, cipher.key, data, true)
+      :blake3_aes_256_gcm -> :crypto.crypto_one_time(:aes_256_ecb, cipher.key, data, true)
+    end
+  end
+
+  defp _decrypt_header(cipher, data) do
+    case cipher.method do
+      :blake3_aes_128_gcm -> :crypto.crypto_one_time(:aes_128_ecb, cipher.key, data, false)
+      :blake3_aes_256_gcm -> :crypto.crypto_one_time(:aes_256_ecb, cipher.key, data, false)
+    end
+  end
+
+  # server to client header
+  # +------+---------------+-------------------+----------------+----------+------+----------+-------+
+  # | type |   timestamp   | client session ID | padding length |  padding | ATYP |  address |  port |
+  # +------+---------------+-------------------+----------------+----------+------+----------+-------+
+  # |  1B  | 8B unix epoch |         8B        |     u16be      | variable |  1B  | variable | u16be |
+  # +------+---------------+-------------------+----------------+----------+------+----------+-------+
+  defp _build_packet( payload, {a,b,c,d}, port, client_session_id) do
+    time = :os.system_time(:seconds)
+    pad_len = :rand.uniform(900)
+    pad = :crypto.strong_rand_bytes(pad_len)
+    <<1, time::64, client_session_id::bytes, pad_len::16, pad::bytes, 1, a, b, c, d, port::16, payload::bytes>>
+  end
 
 end
+

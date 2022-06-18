@@ -35,7 +35,7 @@ defmodule Cloak.Shadowsocks.TCPTransmitter do
 
   def waiting(:info, {:tcp, l, d}, %{ local: l, remote: nil, cipher: c }=data) do
     :inet.setopts(l, active: :once)
-    with { :ok, %{ iv: iv, data: payload } } <- Conn.split_package(d, c.iv_len),
+    with { :ok, iv, payload } <- Conn.split_iv(d, c.iv_len),
          c <- Cipher.init_decoder(c, iv), 
          { :ok, c, res } <- Cipher.stream_decode(c, payload),
          { :ok, req } <- Conn.parse_shadowsocks_request(res)

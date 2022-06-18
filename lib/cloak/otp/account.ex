@@ -3,7 +3,7 @@ require Logger
 defmodule Cloak.Account do
   use Agent
   import Cloak.Registry
-  alias Cloak.Shadowsocks
+  alias Cloak.{ Shadowsocks, Cipher }
   @moduledoc """
   Module to manage ports used
   """
@@ -11,7 +11,7 @@ defmodule Cloak.Account do
   @type ss_port() :: integer()
   @type t() :: %{
     port: ss_port(),
-    method: String.t() | Cloak.Cipher.method(),
+    method: String.t() | Cipher.method(),
     passwd: String.t()
   }
 
@@ -30,7 +30,7 @@ defmodule Cloak.Account do
       nil ->
         case Shadowsocks.start_worker(account) do
           { :ok, _ } ->
-            Logger.info "PORT #{port} started, cipher #{m}"
+            Logger.info "PORT #{port} started, cipher #{Cipher.parse_name(m)}"
             Cloak.Trojan.reload()
             Agent.update(__MODULE__, &( Map.put( &1, port, account ) ))
           { :error, { :shutdown, reason } } ->
@@ -43,8 +43,7 @@ defmodule Cloak.Account do
       ^account -> :ok
       _ ->
         Logger.info "PORT #{port}: reload - #{inspect account}"
-        Shadowsocks.TCPRelay.set(port, account)
-        Shadowsocks.UDPRelay.set(port, account)
+        Shadowsocks.set(port, account)
         Cloak.Trojan.reload()
         Agent.update(__MODULE__, &( Map.put( &1, port, account ) ))
     end

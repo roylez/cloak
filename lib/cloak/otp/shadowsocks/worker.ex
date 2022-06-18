@@ -3,7 +3,7 @@ require Logger
 defmodule Cloak.Shadowsocks.Worker do
   use Supervisor
   import Cloak.Registry
-  alias Cloak.Shadowsocks
+  alias Cloak.{Shadowsocks, Cipher}
 
   def child_spec(account) do
     %{ 
@@ -18,9 +18,14 @@ defmodule Cloak.Shadowsocks.Worker do
     Supervisor.start_link(__MODULE__, account, name: via({:worker, account.port}))
   end
 
-  def init(%{ port: _port, method: _, passwd: _ } = account) do
-    children = [ { Shadowsocks.TCPRelay, account }, { Shadowsocks.UDPRelay, account } ]
-
+  def init(%{ port: _port, method: m, passwd: _ } = account) do
+    cipher_info = Cipher.parse_name(m) |> Cipher.info()
+    children = case cipher_info do
+      { _, _, :ss2022 } -> 
+        [ { Shadowsocks.TCPRelay, account }, { Shadowsocks.UDPRelay2022, account } ]
+      _ -> 
+        [ { Shadowsocks.TCPRelay, account }, { Shadowsocks.UDPRelay, account } ]
+    end
     Supervisor.init(children, strategy: :one_for_one)
   end
 

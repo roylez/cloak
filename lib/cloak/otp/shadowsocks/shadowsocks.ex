@@ -48,5 +48,14 @@ defmodule Cloak.Shadowsocks do
   def count_workers do
     DynamicSupervisor.which_children(__MODULE__) |> length()
   end
+
+  @doc """
+  Set/update account info for a port
+  """
+  @spec set( integer, account ) :: { :ok, pid() } | { :error, term() }
+  def set(port, account) do
+    stop_worker(port)
+    start_worker(account)
+  end
 end
 

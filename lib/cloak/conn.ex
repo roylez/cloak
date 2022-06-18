@@ -15,18 +15,23 @@ defmodule Cloak.Conn do
 
   alias Cloak.DNSCache
 
-  def split_package( data, iv_size ) when byte_size(data) > iv_size do
-    <<iv::bytes-size(iv_size), payload::bytes>>  = data
-    { :ok, %{ iv: iv, data: payload } }
+  def split_iv( data, iv_size ) do
+    with <<iv::bytes-size(iv_size), payload::bytes>> <- data do
+      { :ok, iv, payload }
+    else
+      _ -> { :error, :invalid_request }
+    end
   end
-
-  def split_package( _, _), do: { :error, :invalid_request }
 
   @doc """
   parse a request according to shadowsocks or trojan protocol
   """
+
   @spec parse_shadowsocks_request( data :: binary ) :: { :ok, map } | { :error, :invalid_request }
-  def parse_shadowsocks_request( data ) when is_binary(data) do
+  def parse_shadowsocks_request( data ), do: parse_shadowsocks_request(data, false)
+
+  @spec parse_shadowsocks_request( data :: binary, padding :: boolean ) :: { :ok, map } | { :error, :invalid_request }
+  def parse_shadowsocks_request( data, false ) when is_binary(data) do
     res = case data do
       # IPV4: TYPE(1) IP(4) PORT(2) PAYLOAD
       <<1, addr::bytes-4, port::16, payload::bytes>> ->
@@ -46,9 +51,29 @@ defmodule Cloak.Conn do
       { :ok, req }
     end
   end
+  def parse_shadowsocks_request( data, true ) when is_binary(data) do
+    res = case data do
+      # IPV4: TYPE(1) IP(4) PORT(2) PAD_LEN(2) PAD(PAD_LEN) PAYLOAD
+      <<1, addr::bytes-4, port::16, pad_len::16, _::bytes-size(pad_len), payload::bytes>> ->
+        { :ok, %{ req_type: 1, addr: addr, port: port, payload: payload } }
+      # FQDN(type=3): TYPE(1) LEN(1) ADDR(LEN) PORT(2) PAD_LEN(2) PAD(PAD_LEN) PAYLOAD
+      <<3, len, addr::bytes-size(len), port::16, pad_len::16, _::bytes-size(pad_len), payload::bytes >> ->
+        { :ok, %{ req_type: 3, addr: addr, port: port, payload: payload } }
+      # IPV6(type=4): TYPE(1) ADDR(16) PORT(2) PAD_LEN(2) PAD(PAD_LEN) PAYLOAD
+      <<4, addr::bytes-16, port::16, pad_len::16, _::bytes-size(pad_len), payload::bytes>> ->
+        { :ok, %{ req_type: 4, addr: addr, port: port, payload: payload } }
+      _ ->
+        { :error, :invalid_request }
+    end
+    with { :ok, req } <- res,
+         { :ok, req } <- resolve_remote_address(req),
+         { :ok, req } <- _filter_forbidden_addresses(req) do
+      { :ok, req }
+    end
+  end
 
   @spec parse_shadowsocks_request( data :: map ) :: { :ok, map } | { :error, :invalid_request }
-  def parse_shadowsocks_request( %{ data: data }=req ) do
+  def parse_shadowsocks_request( %{ data: data }=req, _ ) do
     with { :ok, res } <- parse_shadowsocks_request(data), do: { :ok, Map.merge(req, res) }
   end
 
@@ -97,12 +122,6 @@ defmodule Cloak.Conn do
       { :ok, req }
     end
   end
-
-  @doc """
-  Make a UDP package
-  """
-  @spec udp_build_packet( data :: binary, ip :: tuple, port :: integer ) :: binary
-  def udp_build_packet( payload, {a,b,c,d}, port), do: <<1, a, b, c, d, port::size(16), payload::binary>>
 
   # host name requests
   def resolve_remote_address(%{req_type: 3, addr: addr } = req) do

@@ -6,7 +6,7 @@ defmodule Cloak.Shadowsocks.TCPRelay do
 
   alias Cloak.Cipher
 
-  defstruct ~w( account listener cipher )a
+  defstruct ~w( account cipher )a
 
   @socket_opts   [ nodelay: true, keepalive: true, sndbuf: 2097152, recbuf: 2097152 ]
   @num_acceptors 5
@@ -21,15 +21,10 @@ defmodule Cloak.Shadowsocks.TCPRelay do
     # you can manually close your listening socket in the terminate function,
     # thereby avoiding the irritating port cleanup delay.
     Process.flag( :trap_exit , true )
-    ref = { __MODULE__, port }
     with { :ok, c } <- Cipher.setup(method, passwd),
-         { :ok, _pid } <- :ranch.start_listener(
-           ref, :ranch_tcp,
-           %{ num_acceptors: @num_acceptors, socket_opts: [port: port]++@socket_opts },
-           Cloak.Shadowsocks.TCPTransmitter,
-           %{ port: account.port, cipher: c })
+         { :ok, _pid } <- _start_listener(port, c)
     do
-      { :ok, %__MODULE__{ listener: ref, account: account, cipher: c } } 
+      { :ok, %__MODULE__{ account: account, cipher: c } } 
     else
       { :error, reason }  -> { :stop, reason }
       _ -> :stop
@@ -38,26 +33,25 @@ defmodule Cloak.Shadowsocks.TCPRelay do
 
   # cleanup listening socket
   def terminate(_, state) do
-    :ranch.stop_listener(state.listener)
+    _stop_listener(state.account.port)
     { :shutdown, state }
   end
 
-  def handle_cast( { :set, %{ passwd: passwd, method: method } = account }, state ) do
-    case Cipher.setup(method, passwd) do
-      { :ok, c } ->
-        :ranch.set_protocol_options(
-          state.listener,
-          %{ port: account.port, cipher: c })
-        { :noreply, %{ state| account: account, cipher: c } }
-      _ -> { :noreply, state }
-    end
+  defp _start_listener(port, cipher) do
+    :ranch.start_listener(
+      {__MODULE__, port},
+      :ranch_tcp,
+      %{ num_acceptors: @num_acceptors, socket_opts: [port: port]++@socket_opts },
+      _transmitter(cipher),
+      %{ port: port, cipher: cipher }
+    )
   end
 
-  def set(pid, account) when is_pid(pid) do
-    GenServer.cast(pid, { :set, account })
+  defp _stop_listener(port) do
+    :ranch.stop_listener({__MODULE__, port})
   end
 
-  def set(port, account) when is_integer(port) do
-    GenServer.cast(via({:tcp_relay, port}), { :set, account })
-  end
+  def _transmitter(%{ type: :ss2022 }), do: Cloak.Shadowsocks.TCPTransmitter2022
+  def _transmitter(_), do: Cloak.Shadowsocks.TCPTransmitter
+
 end
