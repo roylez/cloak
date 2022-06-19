@@ -21,7 +21,7 @@ defmodule Cloak.Shadowsocks.Worker do
   def init(%{ port: _port, method: m, passwd: _ } = account) do
     cipher_info = Cipher.parse_name(m) |> Cipher.info()
     children = case cipher_info do
-      { _, _, :ss2022 } -> 
+      { :ss2022, _type, _algo, _kl, _ivl } -> 
         [ { Shadowsocks.TCPRelay, account }, { Shadowsocks.UDPRelay2022, account } ]
       _ -> 
         [ { Shadowsocks.TCPRelay, account }, { Shadowsocks.UDPRelay, account } ]

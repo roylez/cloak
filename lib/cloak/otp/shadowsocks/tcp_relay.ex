@@ -51,7 +51,7 @@ defmodule Cloak.Shadowsocks.TCPRelay do
     :ranch.stop_listener({__MODULE__, port})
   end
 
-  def _transmitter(%{ type: :ss2022 }), do: Cloak.Shadowsocks.TCPTransmitter2022
+  def _transmitter(%{ category: :ss2022 }), do: Cloak.Shadowsocks.TCPTransmitter2022
   def _transmitter(_), do: Cloak.Shadowsocks.TCPTransmitter
 
 end

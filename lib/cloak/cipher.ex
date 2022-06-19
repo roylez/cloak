@@ -10,33 +10,31 @@ defmodule Cloak.Cipher do
   alias __MODULE__
 
   defstruct [
-    method:  nil,   # encryption method
-    key:     nil,   # derived key or aead master key
+    method:  nil,     # encryption method
+    key:     nil,     # derived key or aead master key
     # encoding context
-    #   cfb and ctr ciphers:  erl crypto state reference
-    #   stream ciphers:       { key, iv, counter }
-    #   AEAD:                 { subkey, nonce, tag }
-    #   2022-blake3:          { subkey, nonce }
-    encoder: nil,
-    decoder: nil,
-    key_len: 0,    # key size
-    iv_len: 0,     # iv size
-    type: :stream,  # cipher type, aead / stream / block
+    #   stream:       erl crypto state reference
+    #   AEAD:         { subkey, nonce }
+    encoder:  nil,
+    decoder:  nil,
+    key_len:  0,       # key size
+    iv_len:   0,       # iv/salt size
+    type:     :stream, # cipher type, aead / stream
+    category: :aead,   # algorithm category
+    algo:     nil,     # internal agorithm name
   ]
 
-  @ciphers %{
-    # { key, iv, cipher_type } size pair for streaming ciphers
-    aes_128_ctr:            { 16, 16, :stream },
-    aes_192_ctr:            { 24, 16, :stream },
-    aes_256_ctr:            { 32, 16, :stream },
-    aes_128_cfb:            { 16, 16, :stream },
-    aes_192_cfb:            { 24, 16, :stream },
-    aes_256_cfb:            { 32, 16, :stream },
-    # { key, salt } size pair for AEAD ciphers
-    aes_128_gcm:            { 16, 16, :aead },
-    aes_256_gcm:            { 32, 32, :aead },
-    # { key, salt } size pair for 2022 AEAD ciphers
-    blake3_aes_256_gcm:      { 32, 32, :ss2022 },
+  @methods %{
+    # { category, type, algo, key_len, iv_len | salt_len }
+    aes_128_ctr:        { :stream, :stream, :aes_128_ctr,    16, 16 },
+    aes_192_ctr:        { :stream, :stream, :aes_192_ctr,    24, 16 },
+    aes_256_ctr:        { :stream, :stream, :aes_256_ctr,    32, 16 },
+    aes_128_cfb:        { :stream, :stream, :aes_128_cfb128, 16, 16 },
+    aes_192_cfb:        { :stream, :stream, :aes_192_cfb128, 24, 16 },
+    aes_256_cfb:        { :stream, :stream, :aes_256_cfb128, 32, 16 },
+    aes_128_gcm:        { :aead,   :aead,   :aes_128_gcm,    16, 16 },
+    aes_256_gcm:        { :aead,   :aead,   :aes_256_gcm,    32, 32 },
+    blake3_aes_256_gcm: { :ss2022, :aead,   :aes_256_gcm,    32, 32 },
   }
 
   @doc """
@@ -46,11 +44,11 @@ defmodule Cloak.Cipher do
   def setup(method, passwd) when is_binary(method) do
     method |> parse_name() |> setup(passwd)
   end
-  def setup(method, _passwd) when not is_map_key(@ciphers, method), do: { :error, :invalid_method }
+  def setup(method, _passwd) when not is_map_key(@methods, method), do: { :error, :invalid_method }
   def setup(method, passwd) do
-    { key_len, iv_len, type } = @ciphers[method]
-    res = %__MODULE__{ method: method, key_len: key_len, iv_len: iv_len, type: type }
-    if type == :ss2022 do
+    { category, type, algo, key_len, iv_len } = @methods[method]
+    res = %__MODULE__{ method: method, key_len: key_len, iv_len: iv_len, type: type, algo: algo, category: category }
+    if category == :ss2022 do
       with {:ok, key} <- Base.decode64(passwd),
            ^key_len <- byte_size(key)
       do
@@ -66,18 +64,17 @@ defmodule Cloak.Cipher do
 
   @spec stream_encode( t, data::binary ) :: { :ok, t, res::binary }
   def stream_encode(%Cipher{}=c, ""), do: { :ok, c, "" }
-  def stream_encode(%Cipher{ type: :aead }=c, data) when byte_size(data) > 0x3FFF do
+  def stream_encode(%Cipher{ category: :aead }=c, data) when byte_size(data) > 0x3FFF do
     { :ok, c , res }  = stream_encode(c, binary_part(data, 0, 0x3FFF))
     { :ok, c , more } = stream_encode(c, binary_part(data, 0x3FFF, byte_size(data)-0x3FFF))
     { :ok, c , res <> more }
   end
-  def stream_encode(%Cipher{ type: :ss2022 }=c, data) when byte_size(data) > 0xFFFF do
+  def stream_encode(%Cipher{ category: :ss2022 }=c, data) when byte_size(data) > 0xFFFF do
     { :ok, c , res }  = stream_encode(c, binary_part(data, 0, 0xFFFF))
     { :ok, c , more } = stream_encode(c, binary_part(data, 0xFFFF, byte_size(data)-0xFFFF))
     { :ok, c , res <> more }
   end
-  def stream_encode(%Cipher{ type: type }=c, data)
-  when type in [:aead, :ss2022] do
+  def stream_encode(%Cipher{ type: :aead }=c, data) do
     l = byte_size(data)
     { :ok, c, len } = encode(c, << l::16 >>)
     { :ok, c, res } = encode(c, data)
@@ -88,10 +85,10 @@ defmodule Cloak.Cipher do
   @spec stream_decode( t, data::binary ) :: { :ok, t, res::binary }
 
   def stream_decode(%Cipher{}=c, ""), do: { :ok, c, "" }
-  def stream_decode(%Cipher{type: type, decoder: {key, nonce, buf}}=c, data) when type in [:aead, :ss2022] do
+  def stream_decode(%Cipher{type: :aead, decoder: {key, nonce, buf}}=c, data) do
     stream_decode(%{c|decoder: {key, nonce}}, buf<>data)
   end
-  def stream_decode(%Cipher{type: type}=c, <<len::bytes-18, rest::bytes>>=data) when type in [:aead, :ss2022] do
+  def stream_decode(%Cipher{type: :aead}=c, <<len::bytes-18, rest::bytes>>=data) do
     case decode(c, len) do
       # not enough data for a full package decode, leave it for next time
       { :ok, _, <<len::16>> } when (len+16) > byte_size(rest) ->
@@ -111,7 +108,7 @@ defmodule Cloak.Cipher do
     end
   end
   # when there is not enough data for decoding
-  def stream_decode(%Cipher{type: type, decoder: { key, nonce} }=c, data) when type in [:aead, :ss2022] do
+  def stream_decode(%Cipher{type: :aead, decoder: { key, nonce} }=c, data) do
     { :ok, %{ c| decoder: { key, nonce, data } }, "" }
   end
   def stream_decode(%Cipher{}=c, data), do: decode(c, data)
@@ -123,27 +120,18 @@ defmodule Cloak.Cipher do
   def init_encoder(c, len) when is_integer(len), do: init_encoder(c, _generate_iv(len))
 
   @spec init_encoder( t, binary ) :: { iv::binary, t }
-  def init_encoder(%{ type: type, key: key }=c, salt)
-  when type in [:aead, :ss2022] do
-    subkey = compute_subkey(type, key, salt)
+  def init_encoder(%{ type: :aead, key: key }=c, salt) do
+    subkey = compute_subkey(c.category, key, salt)
     { salt, %{ c | encoder: { subkey, 0 } } }
   end
-  def init_encoder(%{ type: :stream, key: key, method: method }=c, iv)
-  when method in ~w( aes_128_cfb aes_192_cfb aes_256_cfb )a
-  do
-    encoder = :crypto.crypto_init(:"#{method}128", key, iv, true)
-    { iv, %{ c | encoder: encoder } }
-  end
-  def init_encoder(%{ type: :stream, key: key, method: method }=c, iv) do
-    encoder = :crypto.crypto_init(method, key, iv, true)
+  def init_encoder(%{ type: :stream, key: key, algo: algo }=c, iv) do
+    encoder = :crypto.crypto_init(algo, key, iv, true)
     { iv, %{ c | encoder: encoder } }
   end
 
   @spec encode(t, data::binary) :: { :ok, t, res::binary }
-  def encode(%Cipher{ type: type, encoder: { key, nonce } }=c, data)
-  when type in [:aead, :ss2022] do
-    method = _aead_cipher_method(c.method)
-    { res, tag } = :crypto.crypto_one_time_aead(method, key, <<nonce::little-96>>, data, <<>>, true)
+  def encode(%Cipher{ type: :aead, encoder: { key, nonce } }=c, data) do
+    { res, tag } = :crypto.crypto_one_time_aead(c.algo, key, <<nonce::little-96>>, data, <<>>, true)
     { :ok, %{ c | encoder: { key, nonce+1 } }, res <> tag }
   end
   def encode(%Cipher{ type: :stream }=c, data) do
@@ -152,27 +140,19 @@ defmodule Cloak.Cipher do
   end
 
   @spec init_decoder( t, iv::binary) :: t
-  def init_decoder(%{ type: type, key: key }=c, salt)
-  when type in [:aead, :ss2022] do
-    subkey = compute_subkey(type, key, salt)
+  def init_decoder(%{ type: :aead, key: key }=c, salt) do
+    subkey = compute_subkey(c.category, key, salt)
     %{ c | decoder: { subkey, 0 } }
   end
-  def init_decoder(%{ type: :stream, key: key, method: method }=c, iv)
-  when method in ~w( aes_128_cfb aes_192_cfb aes_256_cfb )a
-  do
-    decoder = :crypto.crypto_init(:"#{method}128", key, iv, false)
-    %{ c | decoder: decoder }
-  end
-  def init_decoder(%{ type: :stream, key: key, method: method }=c, iv) do
-    decoder = :crypto.crypto_init(method, key, iv, false)
+  def init_decoder(%{ type: :stream, key: key, algo: algo }=c, iv) do
+    decoder = :crypto.crypto_init(algo, key, iv, false)
     %{ c | decoder: decoder }
   end
 
-  def decode(%Cipher{ type: type, decoder: {key, nonce} }=c, data) when type in [:aead, :ss2022] do
-    method = _aead_cipher_method(c.method)
+  def decode(%Cipher{ type: :aead, decoder: {key, nonce} }=c, data) do
     payload_len = byte_size(data) - 16
     { payload, tag } = :erlang.split_binary(data, payload_len)
-    case :crypto.crypto_one_time_aead(method, key, <<nonce::little-96>>, payload, <<>>, tag, false) do
+    case :crypto.crypto_one_time_aead(c.algo, key, <<nonce::little-96>>, payload, <<>>, tag, false) do
       res when is_binary(res) -> { :ok, %{ c | decoder: { key, nonce+1 } }, res }
       :error -> { :error, :forged }
     end
@@ -217,14 +197,6 @@ defmodule Cloak.Cipher do
     _evp_bytes_to_key(password, key_len, iv_len, bytes <> :crypto.hash(:md5, bytes <> password))
   end
 
-  defp _aead_cipher_method( method ) do
-    case method do
-      :blake3_aes_256_gcm -> :aes_256_gcm
-      :blake3_aes_128_gcm -> :aes_128_gcm
-      _ -> method
-    end
-  end
-
   def parse_name(str) do
     str
     |> String.downcase
@@ -233,5 +205,5 @@ defmodule Cloak.Cipher do
     |> String.to_atom
   end
 
-  def info(method), do: Map.get(@ciphers, method)
+  def info(method), do: Map.get(@methods, method)
 end

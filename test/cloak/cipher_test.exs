@@ -5,7 +5,7 @@ defmodule Cloak.CipherTest do
   @passwd    "foQuC36lejke0X0FkHBbVAJAWiZlGtFO5vKhiduv+is="
   @data      "Something needs to be encrypted"
   @more_data "One thing I've learned in the woods is that there is no such thing as random. Everything is steeped in meaning, colored by relationships, one thing with another."
-  @ciphers ~w(
+  @methods ~w(
     aes_128_ctr
     aes_192_ctr
     aes_256_ctr
@@ -16,7 +16,7 @@ defmodule Cloak.CipherTest do
     aes_256_gcm
   )a
 
-  for method <- @ciphers do
+  for method <- @methods do
     test "#{method} encode/decode" do
       { :ok, c } = Cipher.setup(unquote(method), @passwd)
       { iv, c  } = Cipher.init_encoder(c)
