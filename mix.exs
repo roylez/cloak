@@ -49,6 +49,7 @@ defmodule Cloak.Mixfile do
       { :gen_state_machine, "~> 3.0"   },
       { :tortoise,          "~> 0.9"   },
       { :blake3,            "~> 0.4.1" },
+      { :cachex,            "~> 3.0"   },
       { :observer_cli, "~> 1.5", only: [:dev]  },
       { :dialyxir,     "~> 1.0", only: [:dev], runtime: false }
     ]

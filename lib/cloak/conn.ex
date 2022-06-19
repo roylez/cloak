@@ -125,23 +125,11 @@ defmodule Cloak.Conn do
 
   # host name requests
   def resolve_remote_address(%{req_type: 3, addr: addr } = req) do
-    # addr can be a string of IP or hostname, both can be handled by
-    # :inet.getaddr/2
-    # In case addr is random nonsense, an Exception is raised by :to_charlist/1
-    try do
-      if ip = DNSCache.get(addr) do
+    case DNSCache.fetch(addr) do
+      { status, ip } when status in [:ok, :commit] ->
         { :ok, Map.put(req, :ip, ip) }
-      else
-        addr_cl = to_charlist(addr)
-        case :inet.getaddr(addr_cl, :inet) do
-          { :ok,    ip } ->
-            DNSCache.set(addr, ip)
-            { :ok, Map.put(req, :ip, ip ) }
-          { :error, _  } -> { :error, { :nxdomain, addr } }
-        end
-      end
-    rescue
-      _ -> { :error, :invalid_request }
+      { status, reason } when status in [:ignore, :error] ->
+        { :error, reason }
     end
   end
 
