@@ -70,9 +70,7 @@ defmodule Cloak.Shadowsocks.UDPRelay2022 do
         Logger.warn "----- Unhandled UDP connection: #{inspect(reason)} -----"
         Logger.warn "request: #{inspect(req)}"
         { :noreply, state }
-      e ->
-        Logger.warn "UDP error: #{inspect e}"
-        { :noreply, state }
+      e -> { :noreply, state }
     end
   end
 

@@ -8,6 +8,7 @@ defmodule Cloak.Application do
     children = [
       Cloak.Account,
       Cloak.DNSCache,
+      Cloak.SessionCache,
       Cloak.Bookkeeper,
       { Registry, keys: :unique, name: Cloak.Registry },
       { Common.TableManager, table_user: Cloak.Bookkeeper, table_name: :ledger },
