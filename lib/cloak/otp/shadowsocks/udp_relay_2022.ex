@@ -46,13 +46,14 @@ defmodule Cloak.Shadowsocks.UDPRelay2022 do
   # request to udp servicing port
   def handle_info({ :udp, pt, ip, rport, payload }, %{ port: pt, cipher: c } = state ) do
     :inet.setopts(pt, active: :once)
+    now = :os.system_time(:seconds)
     with <<header::bytes-16, body::bytes>> <- payload,
          <<session_id::bytes-8, _packet_id::64>>=decrypted_header <- _decrypt_header(c, header),
          <<_::bytes-4, nonce::little-96>> = decrypted_header,
          %{ decoder: { subkey, _ } } <- Cipher.init_decoder(c, session_id),
          c = %{ c | decoder: { subkey, nonce } },
          { :ok, _, decoded } <- Cipher.decode(c, body),
-         <<0, timestamp::64, pad_len::16, _::bytes-size(pad_len), request_data::bytes>> <- decoded,
+         <<0, timestamp::64, pad_len::16, _::bytes-size(pad_len), request_data::bytes>> when timestamp > now-30 <- decoded,
          { :ok, req } <- Conn.parse_shadowsocks_request(request_data), 
          { :ok, req } <- Conn.udp_send(req)
     do
@@ -70,7 +71,7 @@ defmodule Cloak.Shadowsocks.UDPRelay2022 do
         Logger.warn "----- Unhandled UDP connection: #{inspect(reason)} -----"
         Logger.warn "request: #{inspect(req)}"
         { :noreply, state }
-      e -> { :noreply, state }
+      _ -> { :noreply, state }
     end
   end
 

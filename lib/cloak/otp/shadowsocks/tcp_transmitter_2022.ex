@@ -35,10 +35,11 @@ defmodule Cloak.Shadowsocks.TCPTransmitter2022 do
     %{ local: l, remote: nil, cipher: c }=data)
   do
     :inet.setopts(l, active: :once)
+    now = :os.system_time(:seconds)
     with { :ok, salt, <<fixed_header::binary-size(27), payload::binary>> } <- Conn.split_iv(d, c.iv_len),
          { :ok, false } <- SessionCache.exists?(salt),
          c <- Cipher.init_decoder(c, salt), 
-         { :ok, c, <<0, timestamp::64, len::16>> } <- Cipher.decode(c, fixed_header),
+         { :ok, c, <<0, timestamp::64, _len::16>> } when timestamp > now-30 <- Cipher.decode(c, fixed_header),
          { :ok, c, res } <- Cipher.decode(c, payload),
          { :ok, req } <- Conn.parse_shadowsocks_request(res, true)
     do
@@ -46,6 +47,7 @@ defmodule Cloak.Shadowsocks.TCPTransmitter2022 do
       { :next_state, { :connecting_remote, req, salt } , %{ data | cipher: c }, [{:next_event, :internal, :connect_remote }] }
     else
       { :error, x } -> { :stop, :normal, %{ data | error: x } }
+      _ -> { :stop, :normal }
     end
   end
 
