@@ -13,18 +13,15 @@ A multi-user Shadowsocks/Trojan implementation in Elixir. For best performance, 
 
 ## Shadowsocks Ciphers
 
-* aes-128-ctr ( crypto )
-* aes-192-ctr ( crypto )
-* aes-256-ctr ( crypto )
-* aes-128-cfb ( crypto )
-* aes-192-cfb ( crypto )
-* aes-256-cfb ( crypto )
-* chacha20 ( libsodium )
-* salsa20 ( libsodium )
-* chacah20-ietf ( libsodium )
-* aes-256-gcm ( libsodium )
-* chacha20-ietf-poly1305 ( libsodium )
-* xchacha20-ietf-poly1305 ( libsodium )
+* aes-128-ctr (stream, **DO NOT USE**)
+* aes-192-ctr (stream, **DO NOT USE**)
+* aes-256-ctr (stream, **DO NOT USE**)
+* aes-128-cfb (stream, **DO NOT USE**)
+* aes-192-cfb (stream, **DO NOT USE**)
+* aes-256-cfb (stream, **DO NOT USE**)
+* aes-128-gcm (AEAD)
+* aes-256-gcm (AEAD)
+* 2022-blake3-aes-256-gcm (Shadowsocks 2022 AEAD)
 
 ## Environment Variables
 
@@ -80,10 +77,12 @@ Static accounts can be written in the following `cloak.yml`
 
 - port: 4444
   passwd: aaaaaa
-  method: chacha20
+  method: aes-256-gcm
 - port: 4445
-  passwd: aaaaaa
-  method: chacha20-ietf
+  # passwd can be generated with
+  # openssl rand -base64 32
+  passwd: q7Dut5M/e93LytgPOMhIAxn485l9QemAr4jPAVAiWUk=
+  method: 2022-blake3-aes-256-gcm
 ```
 
 ## FAQ
@@ -98,8 +97,7 @@ No. TCP fast open requires a TFO cookie within all packages sent, and this may l
 
 3. Aren't those stream ciphers insecure because of their design flaw against replay attack?
 
-Yes. However, according to my experience, active detection tactics such as replay attack is too expensive to be carried out in large scale and are not really a problem. Most of the time you should worry about
-pattern detections.
+Yes. It looks like the wall is getting better at active pattern detection and replay attacks. Use an AEAD or Shadowsocks 2022 AEAD cipher instead.
 
 4. Why there is no obfucscation function?
 
@@ -107,6 +105,6 @@ Vanilla Shadowsocks is good enough and I do not see any point adding this.
 
 5. How about Trojan? How does it perform?
 
-It is a simple idea that works great, but deployment is trickier. I have not tested its performance versus shadowsocks.
+It is a simple idea that works great, but deployment is trickier. I have not tested its performance versus shadowsocks. However I may remove it later if the new Quanzhou DNS whitelisting becomes mainstream.
 
 [1]: https://squeeze.isobar.com/2019/04/11/the-sad-story-of-tcp-fast-open/

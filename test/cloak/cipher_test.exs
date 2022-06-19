@@ -12,12 +12,8 @@ defmodule Cloak.CipherTest do
     aes_128_cfb
     aes_192_cfb
     aes_256_cfb
-    chacha20
-    salsa20
-    chacha20_ietf
+    aes_128_gcm
     aes_256_gcm
-    chacha20_ietf_poly1305
-    xchacha20_ietf_poly1305
   )a
 
   for method <- @ciphers do

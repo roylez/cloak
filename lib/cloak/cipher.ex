@@ -25,34 +25,18 @@ defmodule Cloak.Cipher do
   ]
 
   @ciphers %{
-    aes_128_ctr:            { 16, 16, :ctr },
-    aes_192_ctr:            { 24, 16, :ctr },
-    aes_256_ctr:            { 32, 16, :ctr },
-    aes_128_cfb:            { 16, 16, :block  },
-    aes_192_cfb:            { 24, 16, :block  },
-    aes_256_cfb:            { 32, 16, :block  },
     # { key, iv, cipher_type } size pair for streaming ciphers
-    chacha20:               { 32, 8,  :stream },
-    chacha20_ietf:          { 32, 12, :stream },
-    salsa20:                { 32, 8,  :stream },
+    aes_128_ctr:            { 16, 16, :stream },
+    aes_192_ctr:            { 24, 16, :stream },
+    aes_256_ctr:            { 32, 16, :stream },
+    aes_128_cfb:            { 16, 16, :stream },
+    aes_192_cfb:            { 24, 16, :stream },
+    aes_256_cfb:            { 32, 16, :stream },
     # { key, salt } size pair for AEAD ciphers
-    aes_256_gcm:             { 32, 32, :aead },
-    chacha20_ietf_poly1305:  { 32, 32, :aead },
-    xchacha20_ietf_poly1305: { 32, 32, :aead },
-    # { key, salt } size pair for 2022_blake3 ciphers
+    aes_128_gcm:            { 16, 16, :aead },
+    aes_256_gcm:            { 32, 32, :aead },
+    # { key, salt } size pair for 2022 AEAD ciphers
     blake3_aes_256_gcm:      { 32, 32, :ss2022 },
-  }
-  @sodium_block_size 64
-  @sodium_aead %{ 
-    aes_256_gcm:             Salty.Aead.Aes256gcm,
-    blake3_aes_256_gcm:      Salty.Aead.Aes256gcm,
-    chacha20_ietf_poly1305:  Salty.Aead.Chacha20poly1305Ietf,
-    xchacha20_ietf_poly1305: Salty.Aead.Xchacha20poly1305Ietf
-  }
-  @sodium_stream %{
-    chacha20:      Salty.Stream.Chacha20,
-    salsa20:       Salty.Stream.Salsa20,
-    chacha20_ietf: Salty.Stream.Chacha20Ietf
   }
 
   @doc """
@@ -144,30 +128,25 @@ defmodule Cloak.Cipher do
     subkey = compute_subkey(type, key, salt)
     { salt, %{ c | encoder: { subkey, 0 } } }
   end
-  def init_encoder(%{ type: :stream, key: key }=c, iv) do
-    { iv, %{ c | encoder: { key, iv, 0 } } }
-  end
-  def init_encoder(%{ type: :block, key: key, method: method }=c, iv) do
+  def init_encoder(%{ type: :stream, key: key, method: method }=c, iv)
+  when method in ~w( aes_128_cfb aes_192_cfb aes_256_cfb )a
+  do
     encoder = :crypto.crypto_init(:"#{method}128", key, iv, true)
     { iv, %{ c | encoder: encoder } }
   end
-  def init_encoder(%{ type: :ctr, key: key, method: method }=c, iv) do
+  def init_encoder(%{ type: :stream, key: key, method: method }=c, iv) do
     encoder = :crypto.crypto_init(method, key, iv, true)
     { iv, %{ c | encoder: encoder } }
   end
 
   @spec encode(t, data::binary) :: { :ok, t, res::binary }
-  def encode(%Cipher{ type: type }=c, data)
+  def encode(%Cipher{ type: type, encoder: { key, nonce } }=c, data)
   when type in [:aead, :ss2022] do
-    with {:ok, encoder, res} <- _sodium_aead_encode(c.method, c.encoder, data),
-    do: {:ok, %{c| encoder: encoder }, res}
+    method = _aead_cipher_method(c.method)
+    { res, tag } = :crypto.crypto_one_time_aead(method, key, <<nonce::little-96>>, data, <<>>, true)
+    { :ok, %{ c | encoder: { key, nonce+1 } }, res <> tag }
   end
   def encode(%Cipher{ type: :stream }=c, data) do
-    with { :ok, encoder, res } <- _sodium_stream_encode(data, c.encoder, & @sodium_stream[c.method].xor_ic/4) do
-      { :ok, %{ c | encoder: encoder }, res }
-    end
-  end
-  def encode(%Cipher{ type: t }=c, data) when t in [:block, :ctr] do
     result = :crypto.crypto_update(c.encoder, data)
     { :ok, c, result}
   end
@@ -178,29 +157,27 @@ defmodule Cloak.Cipher do
     subkey = compute_subkey(type, key, salt)
     %{ c | decoder: { subkey, 0 } }
   end
-  def init_decoder(%{ type: :stream, key: key }=c, iv) do
-    %{ c | decoder: { key, iv, 0 } }
-  end
-  def init_decoder(%{ type: :block, key: key, method: method }=c, iv) do
+  def init_decoder(%{ type: :stream, key: key, method: method }=c, iv)
+  when method in ~w( aes_128_cfb aes_192_cfb aes_256_cfb )a
+  do
     decoder = :crypto.crypto_init(:"#{method}128", key, iv, false)
     %{ c | decoder: decoder }
   end
-  def init_decoder(%{ type: :ctr, key: key, method: method }=c, iv) do
+  def init_decoder(%{ type: :stream, key: key, method: method }=c, iv) do
     decoder = :crypto.crypto_init(method, key, iv, false)
     %{ c | decoder: decoder }
   end
 
-  def decode(%Cipher{ type: type }=c, data) when type in [:aead, :ss2022] do
-    with {:ok, decoder, res} <- _sodium_aead_decode(c.method, c.decoder, data) do
-      {:ok, %{c| decoder: decoder}, res}
+  def decode(%Cipher{ type: type, decoder: {key, nonce} }=c, data) when type in [:aead, :ss2022] do
+    method = _aead_cipher_method(c.method)
+    payload_len = byte_size(data) - 16
+    { payload, tag } = :erlang.split_binary(data, payload_len)
+    case :crypto.crypto_one_time_aead(method, key, <<nonce::little-96>>, payload, <<>>, tag, false) do
+      res when is_binary(res) -> { :ok, %{ c | decoder: { key, nonce+1 } }, res }
+      :error -> { :error, :forged }
     end
   end
   def decode(%Cipher{ type: :stream }=c, data) do
-    with { :ok, decoder, res } <- _sodium_stream_encode(data, c.decoder, & @sodium_stream[c.method].xor_ic/4) do
-      { :ok, %{ c | decoder: decoder }, res }
-    end
-  end
-  def decode(%Cipher{ type: t }=c, data) when t in [:block, :ctr] do
     result = :crypto.crypto_update(c.decoder, data)
     {:ok, c, result}
   end
@@ -219,7 +196,7 @@ defmodule Cloak.Cipher do
   """
   @spec compute_subkey( atom, binary, String.t ) :: binary
   def compute_subkey(:aead, key, salt) do
-    HKDF.derive(:sha, key, 32, salt, "ss-subkey")
+    HKDF.derive(:sha, key, byte_size(salt), salt, "ss-subkey")
   end
   def compute_subkey(:ss2022, key, salt) do
     Blake3.derive_key("shadowsocks 2022 session subkey", key <> salt)
@@ -240,42 +217,13 @@ defmodule Cloak.Cipher do
     _evp_bytes_to_key(password, key_len, iv_len, bytes <> :crypto.hash(:md5, bytes <> password))
   end
 
-  defp _pad(str, count), do: String.duplicate(<<0>>, count) <> str
-
-  defp _unpad(str, count) do
-    <<_pad::bytes-size(count), res::bytes>> = str
-    res
-  end
-
-  defp _sodium_stream_encode(bytes, { key, iv, c }, method) do
-    padding = rem( c, @sodium_block_size )
-    ic      = div( c, @sodium_block_size )
-    res = bytes
-          |> _pad(padding)
-          |> method.(iv, ic, key)
-    case res do
-      { :ok, str } ->
-        data = _unpad(str, padding)
-        { :ok, {key, iv, c + byte_size(data) }, data }
-      e -> e
+  defp _aead_cipher_method( method ) do
+    case method do
+      :blake3_aes_256_gcm -> :aes_256_gcm
+      :blake3_aes_128_gcm -> :aes_128_gcm
+      _ -> method
     end
   end
-
-  defp _sodium_aead_encode(method, { key, nonce }, bytes) do
-    mod = @sodium_aead[method]
-    with { :ok, res } <- mod.encrypt( bytes, <<>>, nil, _aead_nonce(method, nonce), key) do
-      { :ok, { key, nonce+1 }, res }
-    end
-  end
-  defp _sodium_aead_decode(method, { key, nonce }, bytes) do
-    mod = @sodium_aead[method]
-    with { :ok, res } <- mod.decrypt( nil, bytes, <<>>, _aead_nonce(method, nonce), key) do
-      { :ok, { key, nonce+1 }, res }
-    end
-  end
-
-  defp _aead_nonce(:xchacha20_ietf_poly1305, int), do: <<int::little-192>>
-  defp _aead_nonce(_, int), do: <<int::little-96>>
 
   def parse_name(str) do
     str

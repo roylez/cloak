@@ -5,13 +5,13 @@ ARG alpine_version=3.13.3
 FROM hexpm/elixir:${elixir_version}-erlang-${erlang_version}-alpine-${alpine_version} AS builder
 
 RUN apk update
-RUN apk add libsodium libsodium-dev build-base git libtool autoconf automake
+RUN apk add build-base git libtool autoconf automake rust cargo
 RUN mix local.hex --force && \
     mix local.rebar --force && \
     mix hex.info
 
 WORKDIR /app
-ENV MIX_ENV=prod
+ENV MIX_ENV=prod RUSTLER_NIF_VERSION=2.15
 ADD . .
 
 RUN mix deps.get
