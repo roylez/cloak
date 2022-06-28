@@ -47,6 +47,7 @@ defmodule Cloak.Mixfile do
       { :ranch,             "~> 2.0"   },
       { :gen_state_machine, "~> 3.0"   },
       { :tortoise,          "~> 0.9"   },
+      { :rustler,           "~> 0.25", override: true },
       { :blake3,            "~> 0.4.1" },
       { :cachex,            "~> 3.0"   },
       { :observer_cli, "~> 1.5", only: [:dev]  },
