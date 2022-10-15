@@ -44,7 +44,7 @@ defmodule Cloak.Shadowsocks.TCPTransmitter2022 do
          { :ok, req } <- Conn.parse_shadowsocks_request(res, true)
     do
       SessionCache.set(salt, 1)
-      { :next_state, { :connecting_remote, req, salt } , %{ data | cipher: c }, [{:next_event, :internal, :connect_remote }] }
+      { :next_state, { :connecting_remote, req, salt } , %{ data | cipher: c }, {:next_event, :internal, :connect_remote } }
     else
       { :error, x } -> { :stop, :normal, %{ data | error: x } }
       _ -> { :stop, :normal }
@@ -69,6 +69,10 @@ defmodule Cloak.Shadowsocks.TCPTransmitter2022 do
     { :ok, c, resp   } = Cipher.encode(c, resp)
     :gen_tcp.send(l, salt <> header <> resp)
     { :next_state, :connected, %{ data | cipher: c } }
+  end
+
+  def handle_event(:info, { :tcp, l, req }, {:connecting_remote, _req, _salt}, %{local: l}) do
+    { :keep_state_and_data, :postpone }
   end
 
   # local requests
