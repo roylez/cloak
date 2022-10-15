@@ -149,6 +149,9 @@ defmodule Cloak.Cipher do
     %{ c | decoder: decoder }
   end
 
+  def decode(%Cipher{ type: :aead, decoder: {key, nonce} }=c, data) when byte_size(data) <= 16 do
+    { :error, :forged }
+  end
   def decode(%Cipher{ type: :aead, decoder: {key, nonce} }=c, data) do
     payload_len = byte_size(data) - 16
     { payload, tag } = :erlang.split_binary(data, payload_len)
