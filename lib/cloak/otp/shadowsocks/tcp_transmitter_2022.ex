@@ -114,8 +114,8 @@ defmodule Cloak.Shadowsocks.TCPTransmitter2022 do
 
   def terminate(_, _, %{ error: error }=data) when not is_nil(error) do
     case error do
-      :forged -> Logger.info  "[forged] #{inspect(data.local_ip)}"
-      reason  -> Logger.debug "[#{inspect(reason)}] #{inspect(data.local_ip)}"
+      :forged -> Logger.debug "[forged] #{inspect(data.local_ip)}"
+      reason  -> Logger.warn "[#{inspect(reason)}] #{inspect(data.local_ip)}"
     end
   end
 

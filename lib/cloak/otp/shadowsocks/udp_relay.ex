@@ -54,7 +54,7 @@ defmodule Cloak.Shadowsocks.UDPRelay do
       req_ports = Map.put(state.req_ports, req.remote, { ip, rport, :os.system_time(:seconds) + @port_ttl })
       { :noreply, %{ state | req_ports: req_ports } }
     else
-      { :error, reason } when reason in ~w( invalid_request private_address )a -> { :noreply, state }
+      { :error, reason } when reason in ~w( invalid_request private_address forged )a -> { :noreply, state }
       { :error, reason } when is_atom(reason) ->
         Logger.warn "#{reason} / udp:#{state.account.port} / #{inspect ip}"
         { :noreply, state }
